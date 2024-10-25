@@ -10,7 +10,9 @@ import carlvbn.raytracing.solids.Solid;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class Renderer {
     private static final float GLOBAL_ILLUMINATION = 0.3F;
@@ -21,6 +23,65 @@ public class Renderer {
     public static float bloomIntensity = 0.5F;
     public static int bloomRadius = 10;
 
+    private static class PixelRunnable implements Runnable {
+        private final Scene scene;
+        private final Graphics gfx;
+        private final int x, y, width, height;
+        private final float resolution;
+
+        public PixelRunnable(Scene scene, Graphics gfx, int x, int y, int width, int height, float resolution) {
+            this.scene = scene;
+            this.gfx = gfx;
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+            this.resolution = resolution;
+        }
+
+        @Override
+        public void run() {
+        	int blockSize = (int) (1 / resolution);
+            // Calcul des coordonnées et rendu de la couleur
+            float[] uv = getNormalizedScreenCoordinates(x, y, width, height);
+            PixelData pixelData = computePixelInfo(scene, uv[0], uv[1]);
+
+            // Synchronisation pour éviter les conflits d'accès à l'objet Graphics
+            synchronized (gfx) {
+                gfx.setColor(pixelData.getColor().toAWTColor());
+                gfx.fillRect(x, y, blockSize, blockSize	);
+            }
+        }
+    }
+    
+    public static void renderScene2(Scene scene, Graphics gfx, int width, int height) {
+        float resolution = 0.1f;
+    	int blockSize = (int) (1 / resolution);
+        long start = System.currentTimeMillis();
+        List<Thread> threads = new ArrayList<>();
+
+        // Parcours de chaque pixel (ou bloc de pixels) pour créer un thread
+        for (int x = 0; x < width; x += blockSize) {
+            for (int y = 0; y < height; y += blockSize) {
+                // Création et démarrage d'un thread pour chaque tâche de rendu de pixel
+                Thread thread = new Thread(new PixelRunnable(scene, gfx, x, y, width, height, blockSize));
+                thread.start();
+                threads.add(thread);
+            }
+        }
+
+        // Attente de la fin de tous les threads
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println("Rendered in " + (System.currentTimeMillis() - start) + "ms");
+    }
+    
     /** Renders the scene to a Pixel buffer
      * @param scene The scene to Render
      * @param width The width of the desired output
